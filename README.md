@@ -8,7 +8,7 @@ This project implements multiple machine learning and physics-based models to pr
 
 ## Study Area
 
-![TVA Monitoring Sites](sites.pdf)
+![TVA Monitoring Sites](sites.png)
 
 TVA GIC monitoring sites across the Tennessee Valley region.
 
