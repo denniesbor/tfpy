@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tfgic"
+version = "0.1.0"
+description = "Transfer function and PINN-based GIC prediction pipeline for TVA power network"
+authors = [{name = "Dennies Bor"}]
+requires-python = ">=3.10"
+
+[project.scripts]
+run-regression = "run_regression:main"
+run-pinn       = "run_pinn:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "config*",
+    "scripts*",
+    "utils*",
+    "viz*",
+]

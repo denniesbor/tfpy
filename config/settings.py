@@ -1,90 +1,73 @@
-import os
+"""
+Author: Dennies Bor
+Role:   Configures standard logging and path constants for the tfgic application.
+"""
+
 import sys
 import logging
 from pathlib import Path
 
-try:
-    from loguru import logger
+import torch
 
-    HAS_LOGURU = True
-except ImportError:
-    HAS_LOGURU = False
-    import logging
+APP_NAME     = "tfgic"
+BASE_DIR     = Path(__file__).resolve().parent.parent
 
-    logger = logging.getLogger("tfgic")
+# All outputs live under data/ to keep the working directory clean
+DEFAULT_DATA_DIR = BASE_DIR / "data"
+MODELS_DIR       = DEFAULT_DATA_DIR / "models"
+RESULTS_DIR      = DEFAULT_DATA_DIR / "results"
 
-APP_NAME = "tfgic"
-
-DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-
+FIGURES_DIR = BASE_DIR / "figures"
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 def get_data_dir(subdir=None):
-    if subdir:
-        data_dir = DEFAULT_DATA_DIR / subdir
-    else:
-        data_dir = DEFAULT_DATA_DIR
-
+    """Return (and create) a data directory, optionally under a subdirectory."""
+    data_dir = DEFAULT_DATA_DIR / subdir if subdir else DEFAULT_DATA_DIR
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
 
 
 def setup_logger(name=APP_NAME, log_file=None, level="INFO"):
-    if HAS_LOGURU:
-        logger.remove()
+    """Configure and return a named logger with console and optional file output."""
+    if isinstance(level, str):
+        level = getattr(logging, level.upper(), logging.INFO)
 
-        logger.add(
-            sys.stderr,
-            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-            filter=lambda record: record["extra"].get("name", name) == name,
-            level=level,
-        )
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
 
-        if log_file:
-            log_path = Path(log_file)
-            if not log_path.parent.exists():
-                log_path.parent.mkdir(parents=True, exist_ok=True)
+    for h in logger.handlers[:]:
+        logger.removeHandler(h)
 
-            logger.add(
-                log_file,
-                format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-                filter=lambda record: record["extra"].get("name", name) == name,
-                level=level,
-                rotation="10 MB",
-                compression="zip",
-            )
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-        named_logger = logger.bind(name=name)
-        return named_logger
-    else:
-        if isinstance(level, str):
-            level = getattr(logging, level)
+    console = logging.StreamHandler(sys.stdout)
+    console.setLevel(level)
+    console.setFormatter(formatter)
+    logger.addHandler(console)
 
-        std_logger = logging.getLogger(name)
-        std_logger.setLevel(level)
+    if log_file:
+        log_path = Path(log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        fh = logging.FileHandler(log_file)
+        fh.setLevel(level)
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
 
-        for handler in std_logger.handlers[:]:
-            std_logger.removeHandler(handler)
+    return logger
 
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
 
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(level)
-        console_handler.setFormatter(formatter)
-        std_logger.addHandler(console_handler)
+# Resolve best available device: CUDA → MPS → CPU
+def _resolve_device():
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
 
-        if log_file:
-            log_path = Path(log_file)
-            if not log_path.parent.exists():
-                log_path.parent.mkdir(parents=True, exist_ok=True)
+DEVICE = _resolve_device()
 
-            file_handler = logging.FileHandler(log_file)
-            file_handler.setLevel(level)
-            file_handler.setFormatter(formatter)
-            std_logger.addHandler(file_handler)
-
-        return std_logger
-
+# Ensure output directories exist at import time
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 config_logger = setup_logger(name=f"{APP_NAME}.config")

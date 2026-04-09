@@ -58,3 +58,17 @@ Comparison of model predictions against observed GIC at multiple sites.
 ## Performance Metrics
 
 Models evaluated using Prediction Efficiency (PE), RMSE, and correlation on test data from May 2024 geomagnetic storm event.
+
+For readme, they should ask me for data/and i can send zipped data, 
+
+# 1. Clone the repository
+git clone https://github.com/denniesbor/tfpy.git
+cd c-swim
+
+# 2. Create and activate the conda environment
+conda env create -f environment.yml
+conda activate spw-env
+
+# 3. Install the package (no pip dependency resolution — conda owns deps)
+pip install -e . --no-deps
+
