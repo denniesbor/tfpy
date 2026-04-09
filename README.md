@@ -56,8 +56,8 @@ data/
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/denniesbor/tfgic.git
-cd tfgic
+git clone https://github.com/denniesbor/tfpy.git
+cd tfpy
 
 # 2. Create and activate the conda environment
 conda env create -f environment.yml
