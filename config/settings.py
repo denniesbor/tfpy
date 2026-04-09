@@ -9,16 +9,17 @@ from pathlib import Path
 
 import torch
 
-APP_NAME     = "tfgic"
-BASE_DIR     = Path(__file__).resolve().parent.parent
+APP_NAME = "tfgic"
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 # All outputs live under data/ to keep the working directory clean
 DEFAULT_DATA_DIR = BASE_DIR / "data"
-MODELS_DIR       = DEFAULT_DATA_DIR / "models"
-RESULTS_DIR      = DEFAULT_DATA_DIR / "results"
+MODELS_DIR = DEFAULT_DATA_DIR / "models"
+RESULTS_DIR = DEFAULT_DATA_DIR / "results"
 
 FIGURES_DIR = BASE_DIR / "figures"
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+
 
 def get_data_dir(subdir=None):
     """Return (and create) a data directory, optionally under a subdirectory."""
@@ -38,7 +39,9 @@ def setup_logger(name=APP_NAME, log_file=None, level="INFO"):
     for h in logger.handlers[:]:
         logger.removeHandler(h)
 
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
 
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(level)
@@ -63,6 +66,7 @@ def _resolve_device():
     if torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
+
 
 DEVICE = _resolve_device()
 

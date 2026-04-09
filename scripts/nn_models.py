@@ -20,13 +20,13 @@ def feature_matrix_cnn(site, mag_data, gic_data, site_relations, start, end):
     mag = site_relations[site]["magnetometer"]
     bx = mag_data.sel(device=mag, time=slice(start, end)).Bx.values.astype("f4")
     by = mag_data.sel(device=mag, time=slice(start, end)).By.values.astype("f4")
-    g  = gic_data.gic.sel(device=site, time=slice(start, end)).values.astype("f4")
+    g = gic_data.gic.sel(device=site, time=slice(start, end)).values.astype("f4")
 
     bx -= np.median(bx)
     by -= np.median(by)
 
-    dBx  = np.gradient(bx)
-    dBy  = np.gradient(by)
+    dBx = np.gradient(bx)
+    dBy = np.gradient(by)
     absB = np.sqrt(bx**2 + by**2)
     d2Bx = np.gradient(dBx)
     d2By = np.gradient(dBy)
@@ -34,14 +34,24 @@ def feature_matrix_cnn(site, mag_data, gic_data, site_relations, start, end):
     # Short and medium moving-average residuals
     bx_ma_short = np.convolve(bx, np.ones(10) / 10, mode="same")
     by_ma_short = np.convolve(by, np.ones(10) / 10, mode="same")
-    bx_ma_med   = np.convolve(bx, np.ones(30) / 30, mode="same")
-    by_ma_med   = np.convolve(by, np.ones(30) / 30, mode="same")
+    bx_ma_med = np.convolve(bx, np.ones(30) / 30, mode="same")
+    by_ma_med = np.convolve(by, np.ones(30) / 30, mode="same")
 
-    X = np.column_stack([
-        bx, by, absB, dBx, dBy, d2Bx, d2By,
-        bx - bx_ma_short, by - by_ma_short,
-        bx - bx_ma_med,   by - by_ma_med,
-    ])
+    X = np.column_stack(
+        [
+            bx,
+            by,
+            absB,
+            dBx,
+            dBy,
+            d2Bx,
+            d2By,
+            bx - bx_ma_short,
+            by - by_ma_short,
+            bx - bx_ma_med,
+            by - by_ma_med,
+        ]
+    )
     return X, g
 
 
@@ -50,17 +60,17 @@ def feature_matrix_gru(site, mag_data, gic_data, site_relations, start, end):
     mag = site_relations[site]["magnetometer"]
     bx = mag_data.sel(device=mag, time=slice(start, end)).Bx.values.astype("f4")
     by = mag_data.sel(device=mag, time=slice(start, end)).By.values.astype("f4")
-    g  = gic_data.gic.sel(device=site, time=slice(start, end)).values.astype("f4")
+    g = gic_data.gic.sel(device=site, time=slice(start, end)).values.astype("f4")
 
     bx -= np.median(bx)
     by -= np.median(by)
 
-    dBx  = np.gradient(bx)
-    dBy  = np.gradient(by)
+    dBx = np.gradient(bx)
+    dBy = np.gradient(by)
     absB = np.sqrt(bx**2 + by**2)
 
     # 30-sample rolling std via convolution
-    k    = 30
+    k = 30
     kern = np.ones(k, "f4") / k
     mu_bx = np.convolve(bx, kern, "same")
     mu_by = np.convolve(by, kern, "same")
@@ -76,11 +86,11 @@ class WindowDataset(Dataset):
 
     def __init__(self, X, y, win=120, mean=None, std=None):
         self.win = win
-        self.X   = torch.tensor(X, dtype=torch.float32)
-        self.y   = torch.tensor(y, dtype=torch.float32)
+        self.X = torch.tensor(X, dtype=torch.float32)
+        self.y = torch.tensor(y, dtype=torch.float32)
         if mean is None:
             mean = self.X.mean(0)
-            std  = self.X.std(0)
+            std = self.X.std(0)
         self.mean, self.std = mean, std
 
     def __len__(self):
@@ -98,12 +108,12 @@ class WindowDS(Dataset):
 
     def __init__(self, X, y, win=256, stats=None, y_stats=None):
         self.win = win
-        self.X   = torch.tensor(X, dtype=torch.float32)
-        self.y   = torch.tensor(y, dtype=torch.float32)
+        self.X = torch.tensor(X, dtype=torch.float32)
+        self.y = torch.tensor(y, dtype=torch.float32)
 
         if stats is None:
-            med  = torch.median(self.X, 0)[0]
-            mad  = torch.median(torch.abs(self.X - med), 0)[0]
+            med = torch.median(self.X, 0)[0]
+            mad = torch.median(torch.abs(self.X - med), 0)[0]
             mad[mad == 0] = 1.0
             stats = (med, 1.4826 * mad)
 
@@ -119,8 +129,8 @@ class WindowDS(Dataset):
 
     def __getitem__(self, i):
         sl = slice(i, i + self.win)
-        x  = ((self.X[sl] - self.stats[0]) / self.stats[1]).T
-        y  = (self.y[i + self.win - 1] - self.y_stats[0]) / self.y_stats[1]
+        x = ((self.X[sl] - self.stats[0]) / self.stats[1]).T
+        y = (self.y[i + self.win - 1] - self.y_stats[0]) / self.y_stats[1]
         return x, y
 
 
@@ -130,11 +140,14 @@ class CNN1D(nn.Module):
     def __init__(self, C):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv1d(C, 32, 5, padding=2), nn.ReLU(),
-            nn.Conv1d(32, 32, 5, padding=2), nn.ReLU(),
+            nn.Conv1d(C, 32, 5, padding=2),
+            nn.ReLU(),
+            nn.Conv1d(32, 32, 5, padding=2),
+            nn.ReLU(),
             nn.AdaptiveAvgPool1d(1),
             nn.Flatten(),
-            nn.Linear(32, 64), nn.ReLU(),
+            nn.Linear(32, 64),
+            nn.ReLU(),
             nn.Linear(64, 1),
         )
 
@@ -148,7 +161,7 @@ class GRU1S(nn.Module):
     def __init__(self, C, hidden=64):
         super().__init__()
         self.gru = nn.GRU(C, hidden, 2, batch_first=True, bidirectional=True)
-        self.fc  = nn.Sequential(nn.Linear(2 * hidden, 64), nn.ReLU(), nn.Linear(64, 1))
+        self.fc = nn.Sequential(nn.Linear(2 * hidden, 64), nn.ReLU(), nn.Linear(64, 1))
 
     def forward(self, x):
         x = x.permute(0, 2, 1)
@@ -161,8 +174,10 @@ class GRU2S(nn.Module):
 
     def __init__(self, C, hidden=64):
         super().__init__()
-        self.gru = nn.GRU(C, hidden, 3, batch_first=True, bidirectional=True, dropout=0.2)
-        self.fc  = nn.Sequential(nn.Linear(2 * hidden, 64), nn.ReLU(), nn.Linear(64, 1))
+        self.gru = nn.GRU(
+            C, hidden, 3, batch_first=True, bidirectional=True, dropout=0.2
+        )
+        self.fc = nn.Sequential(nn.Linear(2 * hidden, 64), nn.ReLU(), nn.Linear(64, 1))
 
     def forward(self, x):
         x = x.permute(0, 2, 1)
@@ -175,15 +190,15 @@ class GRUWithAttention(nn.Module):
 
     def __init__(self, C, hidden=64):
         super().__init__()
-        self.gru       = nn.GRU(C, hidden, 2, batch_first=True, bidirectional=True)
+        self.gru = nn.GRU(C, hidden, 2, batch_first=True, bidirectional=True)
         self.attention = nn.Linear(2 * hidden, 1)
-        self.fc        = nn.Sequential(nn.Linear(2 * hidden, 64), nn.ReLU(), nn.Linear(64, 1))
+        self.fc = nn.Sequential(nn.Linear(2 * hidden, 64), nn.ReLU(), nn.Linear(64, 1))
 
     def forward(self, x):
         x = x.permute(0, 2, 1)
-        out, _       = self.gru(x)
+        out, _ = self.gru(x)
         attn_weights = F.softmax(self.attention(out), dim=1)
-        context      = torch.sum(out * attn_weights, dim=1)
+        context = torch.sum(out * attn_weights, dim=1)
         return self.fc(context).squeeze(-1)
 
 
@@ -193,7 +208,7 @@ class LSTMS(nn.Module):
     def __init__(self, C, hidden=64):
         super().__init__()
         self.lstm = nn.LSTM(C, hidden, 2, batch_first=True, bidirectional=True)
-        self.fc   = nn.Sequential(nn.Linear(2 * hidden, 64), nn.ReLU(), nn.Linear(64, 1))
+        self.fc = nn.Sequential(nn.Linear(2 * hidden, 64), nn.ReLU(), nn.Linear(64, 1))
 
     def forward(self, x):
         x = x.permute(0, 2, 1)
@@ -203,8 +218,10 @@ class LSTMS(nn.Module):
 
 def train_model(model, dl_tr, dl_val, epochs=20, lr=3e-4, wd=1e-4, model_name="model"):
     """Train with early stopping and ReduceLROnPlateau scheduling."""
-    opt       = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=3)
+    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        opt, mode="min", factor=0.5, patience=3
+    )
 
     best, patience, state = 1e9, 6, None
 
@@ -212,7 +229,7 @@ def train_model(model, dl_tr, dl_val, epochs=20, lr=3e-4, wd=1e-4, model_name="m
         model.train()
         for xb, yb in tqdm(dl_tr, desc=f"[{model_name}] epoch {ep + 1}", leave=False):
             xb, yb = xb.to(DEVICE), yb.to(DEVICE)
-            loss   = F.mse_loss(model(xb), yb)
+            loss = F.mse_loss(model(xb), yb)
             opt.zero_grad()
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -239,22 +256,32 @@ def train_model(model, dl_tr, dl_val, epochs=20, lr=3e-4, wd=1e-4, model_name="m
 
 
 def model5a_cnn(
-    site, mag_data, gic_data, site_relations,
-    train_slice, test_slice, window_size=120, epochs=20,
+    site,
+    mag_data,
+    gic_data,
+    site_relations,
+    train_slice,
+    test_slice,
+    window_size=120,
+    epochs=20,
 ):
     """Train and evaluate a 5-model CNN ensemble."""
-    Xtr, ytr = feature_matrix_cnn(site, mag_data, gic_data, site_relations, train_slice.start, train_slice.stop)
-    Xte, yte = feature_matrix_cnn(site, mag_data, gic_data, site_relations, test_slice.start,  test_slice.stop)
+    Xtr, ytr = feature_matrix_cnn(
+        site, mag_data, gic_data, site_relations, train_slice.start, train_slice.stop
+    )
+    Xte, yte = feature_matrix_cnn(
+        site, mag_data, gic_data, site_relations, test_slice.start, test_slice.stop
+    )
 
     ds_tr = WindowDataset(Xtr, ytr, win=window_size)
     n_val = int(0.2 * len(ds_tr))
     ds_train = Subset(ds_tr, list(range(len(ds_tr) - n_val)))
-    ds_val   = Subset(ds_tr, list(range(len(ds_tr) - n_val, len(ds_tr))))
-    ds_te    = WindowDataset(Xte, yte, win=window_size, mean=ds_tr.mean, std=ds_tr.std)
+    ds_val = Subset(ds_tr, list(range(len(ds_tr) - n_val, len(ds_tr))))
+    ds_te = WindowDataset(Xte, yte, win=window_size, mean=ds_tr.mean, std=ds_tr.std)
 
-    dl_tr  = DataLoader(ds_train, batch_size=128,  shuffle=True,  drop_last=True)
-    dl_val = DataLoader(ds_val,   batch_size=128,  shuffle=False)
-    dl_te  = DataLoader(ds_te,    batch_size=128,  shuffle=False)
+    dl_tr = DataLoader(ds_train, batch_size=128, shuffle=True, drop_last=True)
+    dl_val = DataLoader(ds_val, batch_size=128, shuffle=False)
+    dl_te = DataLoader(ds_te, batch_size=128, shuffle=False)
 
     ensemble = []
     for i in range(5):
@@ -279,8 +306,8 @@ def model5a_cnn(
     obs = np.concatenate(obs)
 
     ensemble_preds = np.mean(all_preds, axis=0)
-    mse  = np.mean((obs - ensemble_preds) ** 2)
-    pe   = 1 - mse / np.var(obs)
+    mse = np.mean((obs - ensemble_preds) ** 2)
+    pe = 1 - mse / np.var(obs)
 
     return {
         "predictions": ensemble_preds,
@@ -288,37 +315,50 @@ def model5a_cnn(
         "pe": pe,
         "rmse": np.sqrt(mse),
         "test_times": gic_data.sel(device=site, time=test_slice).time.values[
-            window_size: window_size + len(obs)
+            window_size : window_size + len(obs)
         ],
     }
 
 
 def model5b_gru(
-    site, mag_data, gic_data, site_relations,
-    train_slice, test_slice, window_size=256, epochs=40,
+    site,
+    mag_data,
+    gic_data,
+    site_relations,
+    train_slice,
+    test_slice,
+    window_size=256,
+    epochs=40,
 ):
     """Train and evaluate a weighted GRU ensemble."""
-    Xtr, ytr = feature_matrix_gru(site, mag_data, gic_data, site_relations, train_slice.start, train_slice.stop)
-    Xte, yte = feature_matrix_gru(site, mag_data, gic_data, site_relations, test_slice.start,  test_slice.stop)
+    Xtr, ytr = feature_matrix_gru(
+        site, mag_data, gic_data, site_relations, train_slice.start, train_slice.stop
+    )
+    Xte, yte = feature_matrix_gru(
+        site, mag_data, gic_data, site_relations, test_slice.start, test_slice.stop
+    )
 
     ds_tr = WindowDS(Xtr, ytr, win=window_size)
     n_val = int(0.1 * len(ds_tr))
     ds_val, ds_train = torch.utils.data.random_split(
-        ds_tr, [n_val, len(ds_tr) - n_val],
+        ds_tr,
+        [n_val, len(ds_tr) - n_val],
         generator=torch.Generator().manual_seed(42),
     )
-    ds_te = WindowDS(Xte, yte, win=window_size, stats=ds_tr.stats, y_stats=ds_tr.y_stats)
+    ds_te = WindowDS(
+        Xte, yte, win=window_size, stats=ds_tr.stats, y_stats=ds_tr.y_stats
+    )
 
-    dl_tr  = DataLoader(ds_train, batch_size=1024, shuffle=True,  drop_last=True)
-    dl_val = DataLoader(ds_val,   batch_size=1024, shuffle=False)
-    dl_te  = DataLoader(ds_te,    batch_size=1024, shuffle=False)
+    dl_tr = DataLoader(ds_train, batch_size=1024, shuffle=True, drop_last=True)
+    dl_val = DataLoader(ds_val, batch_size=1024, shuffle=False)
+    dl_te = DataLoader(ds_te, batch_size=1024, shuffle=False)
 
     ensemble_configs = [
-        (GRU1S,           64),
-        (GRU2S,           64),
+        (GRU1S, 64),
+        (GRU2S, 64),
         (GRUWithAttention, 64),
-        (GRU1S,           128),
-        (LSTMS,           64),
+        (GRU1S, 128),
+        (LSTMS, 64),
     ]
 
     ensemble_models, best_val_losses = [], []
@@ -333,7 +373,7 @@ def model5b_gru(
     weights /= weights.sum()
 
     y_mean = ds_te.y_stats[0].item()
-    y_std  = ds_te.y_stats[1].item()
+    y_std = ds_te.y_stats[1].item()
 
     obs = []
     with torch.no_grad():
@@ -352,7 +392,7 @@ def model5b_gru(
 
     ensemble_preds = sum(w * p for w, p in zip(weights, all_preds))
     mse = np.mean((obs - ensemble_preds) ** 2)
-    pe  = 1 - mse / np.var(obs)
+    pe = 1 - mse / np.var(obs)
 
     return {
         "predictions": ensemble_preds,
@@ -360,6 +400,6 @@ def model5b_gru(
         "pe": pe,
         "rmse": np.sqrt(mse),
         "test_times": gic_data.sel(device=site, time=test_slice).time.values[
-            window_size: window_size + len(obs)
+            window_size : window_size + len(obs)
         ],
     }

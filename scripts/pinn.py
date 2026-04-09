@@ -45,9 +45,9 @@ class WindowDS(Dataset):
 
     def __getitem__(self, i):
         sl = slice(i, i + self.win)
-        x  = ((self.X[sl] - self.stats[0]) / self.stats[1]).T
-        e  = self.E[sl].T
-        y  = (self.y[i + self.win - 1] - self.y_stats[0]) / self.y_stats[1]
+        x = ((self.X[sl] - self.stats[0]) / self.stats[1]).T
+        e = self.E[sl].T
+        y = (self.y[i + self.win - 1] - self.y_stats[0]) / self.y_stats[1]
         return x, e, y
 
 
@@ -60,7 +60,7 @@ class ImpedanceLayer(nn.Module):
         self.dZ = nn.Parameter(torch.zeros_like(self.Z0))
 
     def forward(self, Bx_f, By_f):
-        Z    = self.Z0 + self.dZ
+        Z = self.Z0 + self.dZ
         Ex_f = Z[0] * Bx_f + Z[1] * By_f
         Ey_f = Z[2] * Bx_f + Z[3] * By_f
         return Ex_f, Ey_f
@@ -85,16 +85,16 @@ class GICPINN(nn.Module):
             embed_dim=2 * hidden, num_heads=4, batch_first=True, dropout=0.1
         )
 
-        self.fc1      = nn.Linear(2 * hidden, hidden)
-        self.fc2      = nn.Linear(hidden, 32)
-        self.fc3      = nn.Linear(32, 1)
+        self.fc1 = nn.Linear(2 * hidden, hidden)
+        self.fc2 = nn.Linear(hidden, 32)
+        self.fc3 = nn.Linear(32, 1)
         self.residual = nn.Linear(2 * hidden, 1)
-        self.dropout  = nn.Dropout(0.1)
-        self.relu     = nn.ReLU()
+        self.dropout = nn.Dropout(0.1)
+        self.relu = nn.ReLU()
 
     def forward(self, x):
         Bx, By = x[:, 0], x[:, 1]
-        other  = x[:, 2:]
+        other = x[:, 2:]
 
         # Compute E-field via impedance in the frequency domain
         Bx_f = torch.fft.rfft(Bx, dim=-1)[:, 1:]
@@ -102,18 +102,19 @@ class GICPINN(nn.Module):
         Ex_f, Ey_f = self.imp(Bx_f, By_f)
 
         pad = lambda f: torch.cat([torch.zeros_like(f[..., :1]), f], -1)
-        Ex  = torch.fft.irfft(pad(Ex_f), n=Bx.size(1), dim=-1).real
-        Ey  = torch.fft.irfft(pad(Ey_f), n=By.size(1), dim=-1).real
+        Ex = torch.fft.irfft(pad(Ex_f), n=Bx.size(1), dim=-1).real
+        Ey = torch.fft.irfft(pad(Ey_f), n=By.size(1), dim=-1).real
 
         seq = torch.cat(
-            [Bx.unsqueeze(1), By.unsqueeze(1), Ex.unsqueeze(1), Ey.unsqueeze(1), other], 1
+            [Bx.unsqueeze(1), By.unsqueeze(1), Ex.unsqueeze(1), Ey.unsqueeze(1), other],
+            1,
         ).permute(0, 2, 1)
 
-        gru_out, h     = self.gru(seq)
-        attended, w    = self.attention(gru_out, gru_out, gru_out)
-        final_state    = torch.cat([h[-2], h[-1]], 1)
+        gru_out, h = self.gru(seq)
+        attended, w = self.attention(gru_out, gru_out, gru_out)
+        final_state = torch.cat([h[-2], h[-1]], 1)
         attended_final = (w.mean(1).unsqueeze(-1) * attended).sum(1)
-        combined       = final_state + attended_final
+        combined = final_state + attended_final
 
         out = self.dropout(self.relu(self.fc1(combined)))
         out = self.dropout(self.relu(self.fc2(out)))
@@ -149,10 +150,12 @@ def save_best(state_dict, yard):
     logger.info(f"Saved best model to {path}")
 
 
-def train_pinn(model, dl_tr, dl_val, epochs=40, lr=3e-4, yard="", β_E=0.2, λ_Z=1e-3, device=DEVICE):
+def train_pinn(
+    model, dl_tr, dl_val, epochs=40, lr=3e-4, yard="", β_E=0.2, λ_Z=1e-3, device=DEVICE
+):
     """Train GICPINN with composite loss and early stopping."""
-    model     = model.to(device)
-    opt       = torch.optim.AdamW(model.parameters(), lr, weight_decay=1e-4)
+    model = model.to(device)
+    opt = torch.optim.AdamW(model.parameters(), lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=3, factor=0.7)
 
     best, patience, best_state = 1e9, 8, None
@@ -160,25 +163,34 @@ def train_pinn(model, dl_tr, dl_val, epochs=40, lr=3e-4, yard="", β_E=0.2, λ_Z
     for ep in range(epochs):
         model.train()
         train_loss = 0.0
-        for step, (xb, eref, yb) in enumerate(tqdm(dl_tr, desc=f"train {yard} ep{ep}", leave=False)):
+        for step, (xb, eref, yb) in enumerate(
+            tqdm(dl_tr, desc=f"train {yard} ep{ep}", leave=False)
+        ):
             xb, eref, yb = xb.to(device), eref.to(device), yb.to(device)
 
-            if dump_bad(xb, "X", yard, step) or dump_bad(eref, "Eref", yard, step) or dump_bad(yb, "y", yard, step):
+            if (
+                dump_bad(xb, "X", yard, step)
+                or dump_bad(eref, "Eref", yard, step)
+                or dump_bad(yb, "y", yard, step)
+            ):
                 break
 
             assert_finite(xb, yb, where="input")
             pred, (Ex, Ey) = model(xb)
             assert_finite(pred, Ex, Ey, where="output")
 
-            L_gic    = F.mse_loss(pred, yb)
-            L_E      = F.mse_loss(torch.stack([Ex, Ey], 1), eref)
-            L_Z      = torch.mean(model.imp.dZ.abs() ** 2)
+            L_gic = F.mse_loss(pred, yb)
+            L_E = F.mse_loss(torch.stack([Ex, Ey], 1), eref)
+            L_Z = torch.mean(model.imp.dZ.abs() ** 2)
             L_smooth = (
                 torch.mean(torch.abs(model.imp.dZ[1:] - model.imp.dZ[:-1]))
-                if model.imp.dZ.shape[1] > 1 else 0
+                if model.imp.dZ.shape[1] > 1
+                else 0
             )
             L_robust = F.huber_loss(pred, yb, delta=1.0)
-            loss     = 0.7 * L_gic + 0.3 * L_robust + β_E * L_E + λ_Z * L_Z + 1e-4 * L_smooth
+            loss = (
+                0.7 * L_gic + 0.3 * L_robust + β_E * L_E + λ_Z * L_Z + 1e-4 * L_smooth
+            )
 
             opt.zero_grad()
             loss.backward()
@@ -191,8 +203,10 @@ def train_pinn(model, dl_tr, dl_val, epochs=40, lr=3e-4, yard="", β_E=0.2, λ_Z
         with torch.no_grad():
             for xb, eref, yb in dl_val:
                 xb, eref, yb = xb.to(device), eref.to(device), yb.to(device)
-                p, (Ex, Ey)  = model(xb)
-                val_loss    += (F.mse_loss(p, yb) + β_E * F.mse_loss(torch.stack([Ex, Ey], 1), eref)).item()
+                p, (Ex, Ey) = model(xb)
+                val_loss += (
+                    F.mse_loss(p, yb) + β_E * F.mse_loss(torch.stack([Ex, Ey], 1), eref)
+                ).item()
 
         val_loss /= len(dl_val)
         scheduler.step(val_loss)
@@ -229,32 +243,36 @@ def evaluate_model(model, ds_te, batch_size=1024, device=DEVICE):
             obs.append(yb)
 
     preds = torch.cat(preds).numpy()
-    obs   = torch.cat(obs).numpy()
-    mse   = np.mean((obs - preds) ** 2)
-    pe    = 1 - mse / np.var(obs) if np.var(obs) > 0 else float("nan")
+    obs = torch.cat(obs).numpy()
+    mse = np.mean((obs - preds) ** 2)
+    pe = 1 - mse / np.var(obs) if np.var(obs) > 0 else float("nan")
 
     return {
         "predictions": preds,
         "observations": obs,
-        "PE":          pe,
-        "MSE":         mse,
-        "RMSE":        np.sqrt(mse),
-        "MAE":         np.mean(np.abs(obs - preds)),
+        "PE": pe,
+        "MSE": mse,
+        "RMSE": np.sqrt(mse),
+        "MAE": np.mean(np.abs(obs - preds)),
         "Correlation": np.corrcoef(obs, preds)[0, 1],
     }
 
 
 def _build_dataloaders(ds_list, win, batch):
     """Concatenate datasets and split into train/val dataloaders."""
-    full  = ConcatDataset(ds_list)
+    full = ConcatDataset(ds_list)
     n_val = max(1, int(0.1 * len(full)))
     ds_val, ds_tr = random_split(full, [n_val, len(full) - n_val])
-    dl_tr  = DataLoader(ds_tr,  batch_size=min(batch, len(ds_tr)),  shuffle=True,  drop_last=True)
+    dl_tr = DataLoader(
+        ds_tr, batch_size=min(batch, len(ds_tr)), shuffle=True, drop_last=True
+    )
     dl_val = DataLoader(ds_val, batch_size=min(batch, len(ds_val)), shuffle=False)
     return dl_tr, dl_val
 
 
-def leave_one_yard_out(yards, build_feature_tensor_fn, win=256, batch=1024, epochs=40, device=DEVICE):
+def leave_one_yard_out(
+    yards, build_feature_tensor_fn, win=256, batch=1024, epochs=40, device=DEVICE
+):
     """Leave-one-yard-out cross-validation across all yards."""
     dummy_Z = np.zeros((4, ceil(win / 2)), dtype=np.complex64)
     results = {}
@@ -268,11 +286,15 @@ def leave_one_yard_out(yards, build_feature_tensor_fn, win=256, batch=1024, epoc
             logger.debug(f"{y}  windows: {len(ds_train[-1]):,}")
 
         X_te, y_te, E_te = build_feature_tensor_fn(test_yard)
-        ds_te = WindowDS(X_te, y_te, E_te, win, stats=ds_train[0].stats, y_stats=ds_train[0].y_stats)
+        ds_te = WindowDS(
+            X_te, y_te, E_te, win, stats=ds_train[0].stats, y_stats=ds_train[0].y_stats
+        )
 
         dl_tr, dl_val = _build_dataloaders(ds_train, win, batch)
         model = GICPINN(dummy_Z, n_other=15, hidden=64).to(device)
-        train_pinn(model, dl_tr, dl_val, epochs=epochs, lr=3e-4, yard=test_yard, device=device)
+        train_pinn(
+            model, dl_tr, dl_val, epochs=epochs, lr=3e-4, yard=test_yard, device=device
+        )
 
         res = evaluate_model(model, ds_te, batch_size=batch, device=device)
         results[test_yard] = res
@@ -285,10 +307,12 @@ def leave_one_yard_out(yards, build_feature_tensor_fn, win=256, batch=1024, epoc
     return results
 
 
-def train_on_all_yards(yards, build_feature_tensor_fn, win=256, batch=1024, epochs=40, device=DEVICE):
+def train_on_all_yards(
+    yards, build_feature_tensor_fn, win=256, batch=1024, epochs=40, device=DEVICE
+):
     """Train a single GICPINN on all yards combined."""
     logger.info(f"Training on all yards: {yards}")
-    dummy_Z  = np.zeros((4, ceil(win / 2)), dtype=np.complex64)
+    dummy_Z = np.zeros((4, ceil(win / 2)), dtype=np.complex64)
     ds_train = []
     for y in yards:
         X, y_gic, E = build_feature_tensor_fn(y)
@@ -297,23 +321,39 @@ def train_on_all_yards(yards, build_feature_tensor_fn, win=256, batch=1024, epoc
 
     dl_tr, dl_val = _build_dataloaders(ds_train, win, batch)
     model = GICPINN(dummy_Z, n_other=15, hidden=64).to(device)
-    return train_pinn(model, dl_tr, dl_val, epochs=epochs, lr=3e-4, yard="all_yards", device=device)
-
-
-def train_temporal_split(yard, build_feature_tensor_fn, win=256, batch=1024, epochs=40, device=DEVICE):
-    """Train on days 1-2, evaluate on day 3 for a single yard."""
-    X_full, y_full, E_full = build_feature_tensor_fn(yard)
-    split    = 2 * (len(y_full) // 3)
-    train_ds = WindowDS(X_full[:split], y_full[:split], E_full[:split], win)
-    test_ds  = WindowDS(
-        X_full[split:], y_full[split:], E_full[split:], win,
-        stats=train_ds.stats, y_stats=train_ds.y_stats,
+    return train_pinn(
+        model, dl_tr, dl_val, epochs=epochs, lr=3e-4, yard="all_yards", device=device
     )
 
-    dl_tr, dl_val   = _build_dataloaders([train_ds], win, batch)
-    dummy_Z          = np.zeros((4, ceil(win / 2)), dtype=np.complex64)
-    model            = GICPINN(dummy_Z, n_other=15, hidden=64).to(device)
-    trained          = train_pinn(model, dl_tr, dl_val, epochs=epochs, lr=3e-4, yard=f"{yard}_temporal", device=device)
-    results          = evaluate_model(trained, test_ds, device=device)
-    results["yard"]  = yard
+
+def train_temporal_split(
+    yard, build_feature_tensor_fn, win=256, batch=1024, epochs=40, device=DEVICE
+):
+    """Train on days 1-2, evaluate on day 3 for a single yard."""
+    X_full, y_full, E_full = build_feature_tensor_fn(yard)
+    split = 2 * (len(y_full) // 3)
+    train_ds = WindowDS(X_full[:split], y_full[:split], E_full[:split], win)
+    test_ds = WindowDS(
+        X_full[split:],
+        y_full[split:],
+        E_full[split:],
+        win,
+        stats=train_ds.stats,
+        y_stats=train_ds.y_stats,
+    )
+
+    dl_tr, dl_val = _build_dataloaders([train_ds], win, batch)
+    dummy_Z = np.zeros((4, ceil(win / 2)), dtype=np.complex64)
+    model = GICPINN(dummy_Z, n_other=15, hidden=64).to(device)
+    trained = train_pinn(
+        model,
+        dl_tr,
+        dl_val,
+        epochs=epochs,
+        lr=3e-4,
+        yard=f"{yard}_temporal",
+        device=device,
+    )
+    results = evaluate_model(trained, test_ds, device=device)
+    results["yard"] = yard
     return results

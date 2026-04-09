@@ -23,10 +23,10 @@ logger = setup_logger(name="tfgic.run_viz")
 def load_data():
     """Load all datasets needed for visualisation."""
     logger.info("Loading data.")
-    tva_gic  = load_tva_gic()
-    tva_mag  = load_tva_magnetometer()
-    sites    = get_selected_sites()
-    tl_gdf   = load_and_process_transmission_lines()
+    tva_gic = load_tva_gic()
+    tva_mag = load_tva_magnetometer()
+    sites = get_selected_sites()
+    tl_gdf = load_and_process_transmission_lines()
     site_rel = find_closest_magnetometers_to_gic(gic_data=tva_gic, mag_data=tva_mag)
     return tva_gic, tva_mag, sites, tl_gdf, site_rel
 

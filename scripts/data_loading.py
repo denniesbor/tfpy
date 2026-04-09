@@ -47,17 +47,27 @@ def load_transmission_lines(filename=None):
 def load_and_process_transmission_lines(transmission_lines_path=None):
     """Load and process EHV transmission lines, filtering by voltage and FERC region."""
     if transmission_lines_path is None:
-        transmission_lines_path = get_data_dir() / "TL" / "Electric__Power_Transmission_Lines.shp"
+        transmission_lines_path = (
+            get_data_dir() / "TL" / "Electric__Power_Transmission_Lines.shp"
+        )
 
     if not transmission_lines_path.exists():
-        logger.error(f"Transmission lines shapefile {transmission_lines_path} not found.")
-        raise FileNotFoundError(f"Transmission lines shapefile {transmission_lines_path} not found.")
+        logger.error(
+            f"Transmission lines shapefile {transmission_lines_path} not found."
+        )
+        raise FileNotFoundError(
+            f"Transmission lines shapefile {transmission_lines_path} not found."
+        )
 
     gdf = gpd.read_file(transmission_lines_path).to_crs("EPSG:4326")
     gdf.rename(columns={"ID": "line_id"}, inplace=True)
     gdf = gdf.reset_index(drop=True).explode(index_parts=True).reset_index(level=1)
     gdf["line_id"] = gdf.apply(
-        lambda row: f"{row['line_id']}_{row['level_1']}" if row["level_1"] > 0 else row["line_id"],
+        lambda row: (
+            f"{row['line_id']}_{row['level_1']}"
+            if row["level_1"] > 0
+            else row["line_id"]
+        ),
         axis=1,
     )
 
@@ -65,9 +75,22 @@ def load_and_process_transmission_lines(transmission_lines_path=None):
 
     # Map non-standard voltages to nearest standard rating
     line_voltage_ratings = {
-        345: 345, 230: 230, 450: 500, 500: 500, 765: 765,
-        250: 230, 400: 345, 232: 230, 1000: 765, 220: 230,
-        273: 230, 218: 230, 236: 230, 287: 345, 238: 230, 200: 230,
+        345: 345,
+        230: 230,
+        450: 500,
+        500: 500,
+        765: 765,
+        250: 230,
+        400: 345,
+        232: 230,
+        1000: 765,
+        220: 230,
+        273: 230,
+        218: 230,
+        236: 230,
+        287: 345,
+        238: 230,
+        200: 230,
     }
     gdf["VOLTAGE"] = gdf["VOLTAGE"].map(line_voltage_ratings).fillna(gdf["VOLTAGE"])
     gdf["length"] = gdf.apply(lambda row: bezpy.tl.TransmissionLine(row).length, axis=1)
@@ -115,7 +138,9 @@ def find_closest_mt_sites_to_magnetometers(mt_sites=None, mag_data=None):
             "lat": mag_lat,
             "lon": mag_lon,
         }
-        logger.info(f"Magnetometer {device}: closest MT site {closest_site.name} at {min_dist:.2f} km.")
+        logger.info(
+            f"Magnetometer {device}: closest MT site {closest_site.name} at {min_dist:.2f} km."
+        )
 
     return closest_sites
 
@@ -132,9 +157,15 @@ def find_closest_magnetometers_to_mt_sites(mt_sites=None, mag_data=None):
         mt_lat, mt_lon = site.latitude, site.longitude
 
         dists = [
-            (mag, haversine_dist(mt_lat, mt_lon,
-                mag_data.sel(device=mag).latitude.item(),
-                mag_data.sel(device=mag).longitude.item()))
+            (
+                mag,
+                haversine_dist(
+                    mt_lat,
+                    mt_lon,
+                    mag_data.sel(device=mag).latitude.item(),
+                    mag_data.sel(device=mag).longitude.item(),
+                ),
+            )
             for mag in mag_data.device.values
         ]
         closest_mag, min_dist = min(dists, key=lambda x: x[1])
@@ -147,7 +178,9 @@ def find_closest_magnetometers_to_mt_sites(mt_sites=None, mag_data=None):
             "mag_lat": mag_data.sel(device=closest_mag).latitude.item(),
             "mag_lon": mag_data.sel(device=closest_mag).longitude.item(),
         }
-        logger.info(f"MT site {site.name}: nearest magnetometer {closest_mag} ({min_dist:.2f} km).")
+        logger.info(
+            f"MT site {site.name}: nearest magnetometer {closest_mag} ({min_dist:.2f} km)."
+        )
 
     return mapping
 
@@ -178,17 +211,25 @@ def find_closest_magnetometers_to_gic(
         gic_lon = gic_data.sel(device=device).longitude.item()
 
         dists_mag = [
-            (mag, haversine_dist(gic_lat, gic_lon,
-                mag_data.sel(device=mag).latitude.item(),
-                mag_data.sel(device=mag).longitude.item()))
+            (
+                mag,
+                haversine_dist(
+                    gic_lat,
+                    gic_lon,
+                    mag_data.sel(device=mag).latitude.item(),
+                    mag_data.sel(device=mag).longitude.item(),
+                ),
+            )
             for mag in mag_data.device.values
         ]
         closest_mag, min_dist = min(dists_mag, key=lambda x: x[1])
         closest_mt = closest_mag_sites[closest_mag]["site"]
 
         mt_cluster = [
-            site for site in mt_sites
-            if haversine_dist(gic_lat, gic_lon, site.latitude, site.longitude) <= radius_km
+            site
+            for site in mt_sites
+            if haversine_dist(gic_lat, gic_lon, site.latitude, site.longitude)
+            <= radius_km
         ]
         if not mt_cluster:
             mt_cluster = [closest_mt]

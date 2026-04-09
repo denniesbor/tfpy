@@ -11,7 +11,7 @@ from .settings import (
     DEFAULT_DATA_DIR,
     MODELS_DIR,
     RESULTS_DIR,
-    DEVICE
+    DEVICE,
 )
 
 __all__ = [
@@ -23,5 +23,5 @@ __all__ = [
     "MODELS_DIR",
     "RESULTS_DIR",
     "FIGURES_DIR",
-    "DEVICE"
+    "DEVICE",
 ]
